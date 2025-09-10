@@ -1,0 +1,284 @@
+openapi: 3.0.3
+info:
+  title: Commun Printing API
+  description: API pro platformu sdíleného 3D tisku na zakázku "Commun Printing".
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000/api
+    description: Development server
+
+paths:
+  /auth/register:
+    post:
+      summary: Registrace nového uživatele
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterUserDto'
+      responses:
+        '201':
+          description: Uživatel úspěšně zaregistrován
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Nevalidní vstupní data
+
+  /auth/login:
+    post:
+      summary: Přihlášení uživatele
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginDto'
+      responses:
+        '200':
+          description: Přihlášení úspěšné, vrací JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+
+  /models:
+    post:
+      summary: Nahrání 3D modelu
+      tags:
+        - Models
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Model úspěšně nahrán, analýza spuštěna
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model_id:
+                    type: string
+                    format: uuid
+
+  /models/{id}/estimate:
+    get:
+      summary: Získání odhadu pro model
+      tags:
+        - Models
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Vrací odhad ceny a parametrů tisku
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Estimate'
+        '404':
+          description: Model nenalezen nebo analýza stále probíhá
+
+  /printers:
+    get:
+      summary: Seznam dostupných tiskáren
+      tags:
+        - Printers
+      parameters:
+        - name: material
+          in: query
+          schema:
+            type: string
+        - name: min_volume_x
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Pole tiskáren
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Printer'
+
+  /orders:
+    post:
+      summary: Vytvoření nové objednávky
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderDto'
+      responses:
+        '201':
+          description: Objednávka vytvořena, vrací URL pro platbu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    format: uuid
+                  payment_url:
+                    type: string
+                    format: uri
+
+  /webhooks/stripe:
+    post:
+      summary: Stripe webhook pro zpracování událostí
+      tags:
+        - Webhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object # Stripe event object
+      responses:
+        '200':
+          description: Webhook přijat
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterUserDto:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        role:
+          type: string
+          enum: [customer, owner]
+        referral_code:
+          type: string
+      required:
+        - name
+        - email
+        - password
+        - role
+
+    LoginDto:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [customer, owner, admin]
+
+    Printer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        brand:
+          type: string
+        model:
+          type: string
+        max_volume_mm:
+          type: object
+          properties:
+            x: { type: number }
+            y: { type: number }
+            z: { type: number }
+        materials:
+          type: array
+          items:
+            type: string
+        quality_score:
+          type: number
+
+    Estimate:
+      type: object
+      properties:
+        volume_cm3:
+          type: number
+        estimated_hours:
+          type: number
+        material_g:
+          type: number
+        suggested_price_eur:
+          type: number
+
+    CreateOrderDto:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              model_id:
+                type: string
+                format: uuid
+              printer_id:
+                type: string
+                format: uuid
+              settings:
+                type: object
+                properties:
+                  material: { type: string }
+                  quality: { type: string }
+      required:
+        - items

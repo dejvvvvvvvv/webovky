@@ -1,0 +1,107 @@
+name: Commun Printing CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        run: cd frontend && npm install
+
+      - name: Run Frontend Linter
+        run: cd frontend && npm run lint
+
+      - name: Install Backend Dependencies
+        run: cd backend && npm install
+
+      - name: Run Backend Linter
+        run: cd backend && npm run lint
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Install Backend Dependencies
+        run: cd backend && npm install
+
+      - name: Run Backend Unit Tests
+        run: cd backend && npm run test
+
+      - name: Install Playwright Browsers
+        run: cd tests && npm install && npx playwright install --with-deps
+
+      - name: Run E2E Tests
+        run: cd tests && npx playwright test
+        # Note: E2E tests would require a running environment.
+        # For a real CI, you would use Docker Compose to spin up services.
+        # Example: docker-compose -f infrastructure/docker-compose.yml up -d
+        # Then run tests against localhost.
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Build Backend
+        run: |
+          cd backend
+          npm install
+          npm run build
+
+      - name: Login to Docker Hub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Placeholder for building and pushing Docker images
+      # - name: Build and push backend image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: ./backend
+      #     push: ${{ github.ref == 'refs/heads/main' }}
+      #     tags: your-docker-repo/commun-printing-backend:latest
